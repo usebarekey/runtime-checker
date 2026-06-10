@@ -106,10 +106,7 @@ impl FffMultiRuntimeScanner {
             return Ok(vec![Vec::new(); runtimes.len()]);
         }
 
-        let pattern_refs: Vec<&str> = entries
-            .iter()
-            .map(|(pattern, _)| pattern.as_str())
-            .collect();
+        let pattern_refs: Vec<&str> = entries.iter().map(|(pattern, _)| *pattern).collect();
         let matcher = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
             .build(pattern_refs)
@@ -118,10 +115,11 @@ impl FffMultiRuntimeScanner {
 
         let mut detections_by_runtime = vec![Vec::new(); runtimes.len()];
         let mut seen_by_runtime = vec![HashSet::new(); runtimes.len()];
-        for file in files {
+        for (file_index, file) in files.iter().enumerate() {
             let mut sink = FffMultiRuntimeSink {
                 entries: &entries,
                 matcher: &matcher,
+                file_index,
                 path: &file.path,
                 detections_by_runtime: &mut detections_by_runtime,
                 seen_by_runtime: &mut seen_by_runtime,
@@ -141,15 +139,15 @@ impl FffMultiRuntimeScanner {
 
 fn combined_fast_patterns<'a>(
     runtimes: &[&'a RuntimeDb],
-) -> Vec<(String, Vec<RuntimePattern<'a>>)> {
-    let mut by_pattern = HashMap::<String, Vec<RuntimePattern<'a>>>::new();
+) -> Vec<(&'a str, Vec<RuntimePattern<'a>>)> {
+    let mut by_pattern = HashMap::<&'a str, Vec<RuntimePattern<'a>>>::new();
     for (runtime_index, runtime) in runtimes.iter().copied().enumerate() {
         for pattern in runtime.fast_patterns() {
             let Some(feature) = runtime.feature_for_pattern(pattern) else {
                 continue;
             };
             by_pattern
-                .entry(pattern.clone())
+                .entry(pattern.as_str())
                 .or_default()
                 .push(RuntimePattern {
                     runtime_index,
@@ -165,7 +163,7 @@ fn combined_fast_patterns<'a>(
             .0
             .len()
             .cmp(&left.0.len())
-            .then_with(|| left.0.cmp(&right.0))
+            .then_with(|| left.0.cmp(right.0))
     });
     entries
 }
@@ -190,11 +188,12 @@ impl Matcher for FffAhoMatcher<'_> {
 }
 
 struct FffMultiRuntimeSink<'a> {
-    entries: &'a [(String, Vec<RuntimePattern<'a>>)],
+    entries: &'a [(&'a str, Vec<RuntimePattern<'a>>)],
     matcher: &'a AhoCorasick,
+    file_index: usize,
     path: &'a Path,
     detections_by_runtime: &'a mut [Vec<DetectedFeature>],
-    seen_by_runtime: &'a mut [HashSet<(String, PathBuf, u64, u64)>],
+    seen_by_runtime: &'a mut [DetectionSeen],
 }
 
 impl Sink for FffMultiRuntimeSink<'_> {
@@ -214,7 +213,7 @@ impl Sink for FffMultiRuntimeSink<'_> {
                     line,
                     found.start(),
                     found.end(),
-                    &self.entries[found.pattern()].0,
+                    self.entries[found.pattern()].0,
                 ) {
                     continue;
                 }
@@ -222,7 +221,8 @@ impl Sink for FffMultiRuntimeSink<'_> {
                     &mut self.detections_by_runtime[runtime_pattern.runtime_index],
                     &mut self.seen_by_runtime[runtime_pattern.runtime_index],
                     runtime_pattern.feature,
-                    self.path.to_path_buf(),
+                    self.file_index,
+                    self.path,
                     line_number,
                     (found.start() + 1) as u64,
                 );
@@ -243,20 +243,23 @@ impl SourceScan {
     }
 }
 
+pub type DetectionSeen = HashSet<(usize, usize, u64, u64)>;
+
 pub fn push_detection(
     detections: &mut Vec<DetectedFeature>,
-    seen: &mut HashSet<(String, PathBuf, u64, u64)>,
+    seen: &mut DetectionSeen,
     feature: &Feature,
-    path: PathBuf,
+    file_index: usize,
+    path: &Path,
     line: u64,
     column: u64,
 ) {
-    let key = (feature.name.clone(), path.clone(), line, column);
+    let key = (feature.id, file_index, line, column);
     if seen.insert(key) {
         detections.push(DetectedFeature {
             feature: feature.name.clone(),
             version: feature.version,
-            path,
+            path: path.to_path_buf(),
             line,
             column,
             count: 1,

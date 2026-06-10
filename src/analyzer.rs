@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
-    sync::Arc,
+    path::Path,
 };
 
 use anyhow::{Context, Result};
@@ -19,7 +18,7 @@ use oxc_syntax::scope::ScopeFlags;
 
 use crate::{
     data::{Feature, RuntimeDb},
-    scanner::{DetectedFeature, SourceFile, push_detection},
+    scanner::{DetectedFeature, DetectionSeen, SourceFile, push_detection},
 };
 
 pub fn analyze_files_for_runtimes(
@@ -60,7 +59,7 @@ fn analyze_file_for_runtimes(
             runtime,
             semantic: &semantic.semantic,
             line_index: &line_index,
-            path: file.path.clone(),
+            path: file.path.as_path(),
             namespace_imports: HashMap::new(),
             named_imports: HashMap::new(),
             local_scopes: vec![HashSet::new()],
@@ -77,12 +76,12 @@ struct AstVisitor<'a, 'db> {
     runtime: &'db RuntimeDb,
     semantic: &'a Semantic<'a>,
     line_index: &'a LineIndex,
-    path: PathBuf,
+    path: &'a Path,
     namespace_imports: HashMap<String, String>,
     named_imports: HashMap<String, String>,
     local_scopes: Vec<HashSet<String>>,
     detections: Vec<DetectedFeature>,
-    seen: HashSet<(String, PathBuf, u64, u64)>,
+    seen: DetectionSeen,
 }
 
 impl<'a> Visit<'a> for AstVisitor<'a, '_> {
@@ -117,16 +116,17 @@ impl<'a> Visit<'a> for AstVisitor<'a, '_> {
 
     fn visit_identifier_reference(&mut self, ident: &IdentifierReference<'a>) {
         let name = ident.name.as_str();
-        if !self.is_shadowed(name) && self.semantic.is_reference_to_global_variable(ident) {
-            if let Some(feature) = self.runtime.match_global(name) {
-                self.emit(feature, ident.span);
-            }
+        if !self.is_shadowed(name)
+            && self.semantic.is_reference_to_global_variable(ident)
+            && let Some(feature) = self.runtime.match_global(name)
+        {
+            self.emit(feature, ident.span);
         }
 
-        if let Some(feature_name) = self.named_imports.get(name) {
-            if let Some(feature) = self.runtime.match_member_chain(feature_name) {
-                self.emit(feature, ident.span);
-            }
+        if let Some(feature_name) = self.named_imports.get(name)
+            && let Some(feature) = self.runtime.match_member_chain(feature_name)
+        {
+            self.emit(feature, ident.span);
         }
 
         walk::walk_identifier_reference(self, ident);
@@ -210,13 +210,23 @@ impl AstVisitor<'_, '_> {
         }
     }
 
-    fn canonicalize_chain(&self, mut parts: Vec<String>) -> String {
-        if let Some(root) = parts.first_mut() {
-            if let Some(module) = self.namespace_imports.get(root) {
-                *root = module.clone();
-            }
+    fn canonicalize_chain(&self, parts: Vec<&str>) -> String {
+        let Some((root, tail)) = parts.split_first() else {
+            return String::new();
+        };
+        let root = self
+            .namespace_imports
+            .get(*root)
+            .map(String::as_str)
+            .unwrap_or(*root);
+        let capacity = root.len() + tail.iter().map(|part| part.len() + 1).sum::<usize>();
+        let mut chain = String::with_capacity(capacity);
+        chain.push_str(root);
+        for part in tail {
+            chain.push('.');
+            chain.push_str(part);
         }
-        parts.join(".")
+        chain
     }
 
     fn is_shadowed(&self, name: &str) -> bool {
@@ -232,22 +242,23 @@ impl AstVisitor<'_, '_> {
             &mut self.detections,
             &mut self.seen,
             feature,
-            self.path.clone(),
+            0,
+            self.path,
             line,
             column,
         );
     }
 }
 
-fn member_chain(member: &StaticMemberExpression<'_>) -> Option<Vec<String>> {
+fn member_chain<'a>(member: &'a StaticMemberExpression<'a>) -> Option<Vec<&'a str>> {
     let mut parts = expression_chain(&member.object)?;
-    parts.push(member.property.name.as_str().to_owned());
+    parts.push(member.property.name.as_str());
     Some(parts)
 }
 
-fn expression_chain(expression: &Expression<'_>) -> Option<Vec<String>> {
+fn expression_chain<'a>(expression: &'a Expression<'a>) -> Option<Vec<&'a str>> {
     match expression {
-        Expression::Identifier(ident) => Some(vec![ident.name.as_str().to_owned()]),
+        Expression::Identifier(ident) => Some(vec![ident.name.as_str()]),
         Expression::StaticMemberExpression(member) => member_chain(member),
         Expression::ParenthesizedExpression(expression) => expression_chain(&expression.expression),
         Expression::TSAsExpression(expression) => expression_chain(&expression.expression),
@@ -332,9 +343,6 @@ impl LineIndex {
         ((line_index + 1) as u64, (offset - line_start + 1) as u64)
     }
 }
-
-#[allow(dead_code)]
-fn _keep_arc_source_code_dependency(_: Arc<String>) {}
 
 #[cfg(test)]
 mod tests {

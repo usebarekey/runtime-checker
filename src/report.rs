@@ -65,16 +65,14 @@ impl Reporter {
             printed_any |= printed;
         }
 
-        if !printed_any {
-            if let Some(feature) = &self.inspect {
-                println!(
-                    "{}No detections found for {}{}{}",
-                    light_gray(),
-                    yellow(),
-                    feature,
-                    reset()
-                );
-            }
+        if !printed_any && let Some(feature) = &self.inspect {
+            println!(
+                "{}No detections found for {}{}{}",
+                light_gray(),
+                yellow(),
+                feature,
+                reset()
+            );
         }
 
         if printed_any || self.inspect.is_some() {

@@ -165,7 +165,7 @@ fn collapse_prefix_detections(detections: &mut Vec<DetectedFeature>) {
     let mut by_location: HashMap<_, Vec<usize>> = HashMap::new();
     for (index, detection) in detections.iter().enumerate() {
         by_location
-            .entry((detection.path.clone(), detection.line, detection.column))
+            .entry((detection.path.as_path(), detection.line, detection.column))
             .or_default()
             .push(index);
     }

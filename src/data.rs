@@ -54,6 +54,7 @@ pub struct RuntimeDb {
 
 #[derive(Debug, Clone)]
 pub struct Feature {
+    pub id: usize,
     pub name: String,
     pub version: RuntimeVersion,
 }
@@ -80,6 +81,7 @@ impl RuntimeDb {
         for feature in spec.features {
             let index = db.features.len();
             db.features.push(Feature {
+                id: index,
                 name: feature.name,
                 version: feature.version,
             });

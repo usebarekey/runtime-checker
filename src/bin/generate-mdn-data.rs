@@ -239,21 +239,21 @@ fn walk_compat_tree(
         return;
     };
 
-    if let Some(compat) = object.get("__compat") {
-        if let Some(version) = support_version(compat, runtime_id) {
-            let name = feature_name(path);
-            if !name.is_empty() && is_runtime_surface_path(path) {
-                let detect = detect_rules(source, path);
-                if !detect.is_empty() {
-                    upsert_feature(
-                        features,
-                        GeneratedFeature {
-                            name,
-                            version,
-                            detect,
-                        },
-                    );
-                }
+    if let Some(compat) = object.get("__compat")
+        && let Some(version) = support_version(compat, runtime_id)
+    {
+        let name = feature_name(path);
+        if !name.is_empty() && is_runtime_surface_path(path) {
+            let detect = detect_rules(source, path);
+            if !detect.is_empty() {
+                upsert_feature(
+                    features,
+                    GeneratedFeature {
+                        name,
+                        version,
+                        detect,
+                    },
+                );
             }
         }
     }
@@ -353,13 +353,13 @@ fn detect_rules(source: SourceKind, path: &[String]) -> Vec<GeneratedDetectRule>
 
     rules.insert(GeneratedDetectRule::MemberChain(name));
 
-    if matches!(source, SourceKind::JavascriptBuiltin) && path.len() >= 2 {
-        if let Some(property) = path
+    if matches!(source, SourceKind::JavascriptBuiltin)
+        && path.len() >= 2
+        && let Some(property) = path
             .last()
             .filter(|property| is_detectable_property(property))
-        {
-            rules.insert(GeneratedDetectRule::Property(property.clone()));
-        }
+    {
+        rules.insert(GeneratedDetectRule::Property(property.clone()));
     }
 
     rules.into_iter().collect()
