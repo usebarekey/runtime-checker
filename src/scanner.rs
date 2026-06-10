@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs, io,
     path::{Path, PathBuf},
 };
@@ -86,32 +86,45 @@ impl Scanner for SourceDiscovery {
     }
 }
 
-pub struct FffFastScanner;
+#[derive(Clone, Copy)]
+struct RuntimePattern<'a> {
+    runtime_index: usize,
+    runtime: &'a RuntimeDb,
+    feature: &'a Feature,
+}
 
-impl FffFastScanner {
+pub struct FffMultiRuntimeScanner;
+
+impl FffMultiRuntimeScanner {
     pub fn scan_files(
         &self,
-        runtime: &RuntimeDb,
+        runtimes: &[&RuntimeDb],
         files: &[SourceFile],
-    ) -> Result<Vec<DetectedFeature>> {
-        let patterns = runtime.fast_patterns();
-        let pattern_refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
+    ) -> Result<Vec<Vec<DetectedFeature>>> {
+        let entries = combined_fast_patterns(runtimes);
+        if entries.is_empty() {
+            return Ok(vec![Vec::new(); runtimes.len()]);
+        }
+
+        let pattern_refs: Vec<&str> = entries
+            .iter()
+            .map(|(pattern, _)| pattern.as_str())
+            .collect();
         let matcher = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(pattern_refs.clone())
+            .build(pattern_refs)
             .context("failed to build matcher")?;
         let searcher = SearcherBuilder::new().line_number(true).build();
 
-        let mut detections = Vec::new();
-        let mut seen = HashSet::new();
+        let mut detections_by_runtime = vec![Vec::new(); runtimes.len()];
+        let mut seen_by_runtime = vec![HashSet::new(); runtimes.len()];
         for file in files {
-            let mut sink = FffRuntimeSink {
-                runtime,
-                pattern_refs: &pattern_refs,
+            let mut sink = FffMultiRuntimeSink {
+                entries: &entries,
                 matcher: &matcher,
                 path: &file.path,
-                detections: &mut detections,
-                seen: &mut seen,
+                detections_by_runtime: &mut detections_by_runtime,
+                seen_by_runtime: &mut seen_by_runtime,
             };
             searcher
                 .search_slice(
@@ -122,8 +135,39 @@ impl FffFastScanner {
                 .context("failed to search source with FFF")?;
         }
 
-        Ok(detections)
+        Ok(detections_by_runtime)
     }
+}
+
+fn combined_fast_patterns<'a>(
+    runtimes: &[&'a RuntimeDb],
+) -> Vec<(String, Vec<RuntimePattern<'a>>)> {
+    let mut by_pattern = HashMap::<String, Vec<RuntimePattern<'a>>>::new();
+    for (runtime_index, runtime) in runtimes.iter().copied().enumerate() {
+        for pattern in runtime.fast_patterns() {
+            let Some(feature) = runtime.feature_for_pattern(pattern) else {
+                continue;
+            };
+            by_pattern
+                .entry(pattern.clone())
+                .or_default()
+                .push(RuntimePattern {
+                    runtime_index,
+                    runtime,
+                    feature,
+                });
+        }
+    }
+
+    let mut entries: Vec<_> = by_pattern.into_iter().collect();
+    entries.sort_by(|left, right| {
+        right
+            .0
+            .len()
+            .cmp(&left.0.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    entries
 }
 
 struct FffAhoMatcher<'a> {
@@ -145,16 +189,15 @@ impl Matcher for FffAhoMatcher<'_> {
     }
 }
 
-struct FffRuntimeSink<'a> {
-    runtime: &'a RuntimeDb,
-    pattern_refs: &'a [&'a str],
+struct FffMultiRuntimeSink<'a> {
+    entries: &'a [(String, Vec<RuntimePattern<'a>>)],
     matcher: &'a AhoCorasick,
     path: &'a Path,
-    detections: &'a mut Vec<DetectedFeature>,
-    seen: &'a mut HashSet<(String, PathBuf, u64, u64)>,
+    detections_by_runtime: &'a mut [Vec<DetectedFeature>],
+    seen_by_runtime: &'a mut [HashSet<(String, PathBuf, u64, u64)>],
 }
 
-impl Sink for FffRuntimeSink<'_> {
+impl Sink for FffMultiRuntimeSink<'_> {
     type Error = io::Error;
 
     fn matched(&mut self, _searcher: &Searcher, matched: &SinkMatch<'_>) -> io::Result<bool> {
@@ -165,21 +208,25 @@ impl Sink for FffRuntimeSink<'_> {
         let line_number = matched.line_number().unwrap_or(1);
 
         for found in self.matcher.find_iter(line) {
-            let pattern = self.pattern_refs[found.pattern()];
-            if !is_fast_match(self.runtime, line, found.start(), found.end(), pattern) {
-                continue;
+            for runtime_pattern in &self.entries[found.pattern()].1 {
+                if !is_fast_match(
+                    runtime_pattern.runtime,
+                    line,
+                    found.start(),
+                    found.end(),
+                    &self.entries[found.pattern()].0,
+                ) {
+                    continue;
+                }
+                push_detection(
+                    &mut self.detections_by_runtime[runtime_pattern.runtime_index],
+                    &mut self.seen_by_runtime[runtime_pattern.runtime_index],
+                    runtime_pattern.feature,
+                    self.path.to_path_buf(),
+                    line_number,
+                    (found.start() + 1) as u64,
+                );
             }
-            let Some(feature) = self.runtime.feature_for_pattern(pattern) else {
-                continue;
-            };
-            push_detection(
-                self.detections,
-                self.seen,
-                feature,
-                self.path.to_path_buf(),
-                line_number,
-                (found.start() + 1) as u64,
-            );
         }
 
         Ok(true)

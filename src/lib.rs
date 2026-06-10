@@ -17,7 +17,7 @@ pub use cli::{Cli, RuntimeKind};
 use data::runtime;
 use engines::check_engines;
 use report::{ParserMode, Reporter, RuntimeReport};
-use scanner::{DetectedFeature, FffFastScanner, Scanner, SourceDiscovery, SourceScan};
+use scanner::{DetectedFeature, FffMultiRuntimeScanner, Scanner, SourceDiscovery, SourceScan};
 
 pub fn run(cli: Cli) -> Result<()> {
     let started = Instant::now();
@@ -62,12 +62,15 @@ fn scan_fast(
     aggregate: bool,
     fix: bool,
 ) -> Result<Vec<RuntimeReport>> {
-    let mut reports = Vec::with_capacity(targets.len());
-    let scanner = FffFastScanner;
+    let runtimes = targets
+        .iter()
+        .copied()
+        .map(runtime)
+        .collect::<Result<Vec<_>>>()?;
+    let detections_by_runtime = FffMultiRuntimeScanner.scan_files(&runtimes, sources.files())?;
+    let mut reports = Vec::with_capacity(runtimes.len());
 
-    for target in targets.iter().copied() {
-        let runtime = runtime(target)?;
-        let detections = scanner.scan_files(runtime, sources.files())?;
+    for (runtime, detections) in runtimes.into_iter().zip(detections_by_runtime) {
         reports.push(build_runtime_report(
             root,
             runtime.name(),
