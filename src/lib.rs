@@ -87,12 +87,16 @@ fn scan_ast(
     aggregate: bool,
     fix: bool,
 ) -> Result<Vec<RuntimeReport>> {
+    let runtimes = targets
+        .iter()
+        .copied()
+        .map(runtime)
+        .collect::<Result<Vec<_>>>()?;
+    let detections_by_runtime =
+        analyzer::analyze_files_for_runtimes(root, sources.files(), &runtimes)?;
     let mut reports = Vec::with_capacity(targets.len());
 
-    for target in targets.iter().copied() {
-        let runtime = runtime(target)?;
-        let detections =
-            analyzer::AstAnalyzer::new(runtime).analyze_files(root, sources.files())?;
+    for (runtime, detections) in runtimes.into_iter().zip(detections_by_runtime) {
         reports.push(build_runtime_report(
             root,
             runtime.name(),

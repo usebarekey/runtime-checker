@@ -22,45 +22,44 @@ use crate::{
     scanner::{DetectedFeature, SourceFile, push_detection},
 };
 
-pub struct AstAnalyzer<'db> {
-    runtime: &'db RuntimeDb,
+pub fn analyze_files_for_runtimes(
+    root: &Path,
+    files: &[SourceFile],
+    runtimes: &[&RuntimeDb],
+) -> Result<Vec<Vec<DetectedFeature>>> {
+    let mut detections_by_runtime = vec![Vec::new(); runtimes.len()];
+    for file in files {
+        analyze_file_for_runtimes(file, runtimes, &mut detections_by_runtime)
+            .with_context(|| format!("failed to analyze {}", file.path.display()))?;
+    }
+    let _ = root;
+    Ok(detections_by_runtime)
 }
 
-impl<'db> AstAnalyzer<'db> {
-    pub fn new(runtime: &'db RuntimeDb) -> Self {
-        Self { runtime }
+fn analyze_file_for_runtimes(
+    file: &SourceFile,
+    runtimes: &[&RuntimeDb],
+    detections_by_runtime: &mut [Vec<DetectedFeature>],
+) -> Result<()> {
+    let allocator = Allocator::default();
+    let source_type =
+        SourceType::from_path(&file.path).unwrap_or_else(|_| SourceType::unambiguous());
+    let parsed = Parser::new(&allocator, &file.text, source_type).parse();
+    if !parsed.errors.is_empty() {
+        return Ok(());
     }
 
-    pub fn analyze_files(&self, root: &Path, files: &[SourceFile]) -> Result<Vec<DetectedFeature>> {
-        let mut detections = Vec::new();
-        for file in files {
-            let mut file_detections = self
-                .analyze_file(root, file)
-                .with_context(|| format!("failed to analyze {}", file.path.display()))?;
-            detections.append(&mut file_detections);
-        }
-        Ok(detections)
+    let semantic = SemanticBuilder::new_compiler().build(&parsed.program);
+    if !semantic.errors.is_empty() {
+        return Ok(());
     }
 
-    fn analyze_file(&self, _root: &Path, file: &SourceFile) -> Result<Vec<DetectedFeature>> {
-        let allocator = Allocator::default();
-        let source_type =
-            SourceType::from_path(&file.path).unwrap_or_else(|_| SourceType::unambiguous());
-        let parsed = Parser::new(&allocator, &file.text, source_type).parse();
-        if !parsed.errors.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let semantic = SemanticBuilder::new_compiler().build(&parsed.program);
-        if !semantic.errors.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let line_index = LineIndex::new(&file.text);
+    let line_index = LineIndex::new(&file.text);
+    for (runtime, detections) in runtimes.iter().zip(detections_by_runtime.iter_mut()) {
         let mut visitor = AstVisitor {
-            runtime: self.runtime,
+            runtime,
             semantic: &semantic.semantic,
-            line_index,
+            line_index: &line_index,
             path: file.path.clone(),
             namespace_imports: HashMap::new(),
             named_imports: HashMap::new(),
@@ -69,14 +68,15 @@ impl<'db> AstAnalyzer<'db> {
             seen: HashSet::new(),
         };
         visitor.visit_program(&parsed.program);
-        Ok(visitor.detections)
+        detections.append(&mut visitor.detections);
     }
+    Ok(())
 }
 
 struct AstVisitor<'a, 'db> {
     runtime: &'db RuntimeDb,
     semantic: &'a Semantic<'a>,
-    line_index: LineIndex,
+    line_index: &'a LineIndex,
     path: PathBuf,
     namespace_imports: HashMap<String, String>,
     named_imports: HashMap<String, String>,
@@ -342,17 +342,17 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::{analyzer::AstAnalyzer, data::node_runtime, scanner::SourceFile};
+    use crate::{analyzer::analyze_files_for_runtimes, data::node_runtime, scanner::SourceFile};
 
     fn analyze(path: &Path, text: &str) -> Vec<String> {
         let runtime = node_runtime().unwrap();
-        let analyzer = AstAnalyzer::new(runtime);
         let files = vec![SourceFile {
             path: path.to_path_buf(),
             text: text.to_owned(),
         }];
-        analyzer
-            .analyze_files(path.parent().unwrap(), &files)
+        analyze_files_for_runtimes(path.parent().unwrap(), &files, &[runtime])
+            .unwrap()
+            .pop()
             .unwrap()
             .into_iter()
             .map(|detection| detection.feature)
