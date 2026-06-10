@@ -1,0 +1,354 @@
+use std::{
+    collections::HashSet,
+    fs, io,
+    path::{Path, PathBuf},
+};
+
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use anyhow::{Context, Result};
+use fff_grep::{
+    LineTerminator, Match, Matcher, NoError, Searcher, SearcherBuilder, Sink, SinkMatch,
+};
+use ignore::WalkBuilder;
+
+use crate::{
+    data::{Feature, RuntimeDb},
+    version::RuntimeVersion,
+};
+
+#[derive(Debug, Clone)]
+pub struct SourceFile {
+    pub path: PathBuf,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ScanStats {
+    pub line_count: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceScan {
+    pub files: Vec<SourceFile>,
+    pub stats: ScanStats,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetectedFeature {
+    pub feature: String,
+    pub version: RuntimeVersion,
+    pub path: PathBuf,
+    pub line: u64,
+    pub column: u64,
+    pub count: usize,
+}
+
+pub trait Scanner {
+    type Output;
+
+    fn scan(&self, root: &Path, runtime: &RuntimeDb) -> Result<Self::Output>;
+}
+
+pub struct SourceDiscovery;
+
+impl Scanner for SourceDiscovery {
+    type Output = SourceScan;
+
+    fn scan(&self, root: &Path, _runtime: &RuntimeDb) -> Result<Self::Output> {
+        let mut files = Vec::new();
+        let mut stats = ScanStats::default();
+        let mut builder = WalkBuilder::new(root);
+        builder.filter_entry(|entry| !is_ignored_dir(entry.path()));
+
+        for entry in builder.build() {
+            let entry = entry?;
+            let path = entry.path();
+            if !entry
+                .file_type()
+                .is_some_and(|file_type| file_type.is_file())
+            {
+                continue;
+            }
+            if !is_source_file(path) {
+                continue;
+            }
+
+            let text = fs::read_to_string(path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            stats.line_count += count_lines(&text);
+            files.push(SourceFile {
+                path: path.to_path_buf(),
+                text,
+            });
+        }
+
+        Ok(SourceScan { files, stats })
+    }
+}
+
+pub struct FffFastScanner;
+
+impl FffFastScanner {
+    pub fn scan_files(
+        &self,
+        runtime: &RuntimeDb,
+        files: &[SourceFile],
+    ) -> Result<Vec<DetectedFeature>> {
+        let patterns = runtime.fast_patterns();
+        let pattern_refs: Vec<&str> = patterns.iter().map(String::as_str).collect();
+        let matcher = AhoCorasickBuilder::new()
+            .match_kind(MatchKind::LeftmostLongest)
+            .build(pattern_refs.clone())
+            .context("failed to build matcher")?;
+        let searcher = SearcherBuilder::new().line_number(true).build();
+
+        let mut detections = Vec::new();
+        let mut seen = HashSet::new();
+        for file in files {
+            let mut sink = FffRuntimeSink {
+                runtime,
+                pattern_refs: &pattern_refs,
+                matcher: &matcher,
+                path: &file.path,
+                detections: &mut detections,
+                seen: &mut seen,
+            };
+            searcher
+                .search_slice(
+                    FffAhoMatcher { matcher: &matcher },
+                    file.text.as_bytes(),
+                    &mut sink,
+                )
+                .context("failed to search source with FFF")?;
+        }
+
+        Ok(detections)
+    }
+}
+
+struct FffAhoMatcher<'a> {
+    matcher: &'a AhoCorasick,
+}
+
+impl Matcher for FffAhoMatcher<'_> {
+    type Error = NoError;
+
+    fn find_at(&self, haystack: &[u8], at: usize) -> std::result::Result<Option<Match>, NoError> {
+        Ok(self
+            .matcher
+            .find(&haystack[at..])
+            .map(|matched| Match::new(at + matched.start(), at + matched.end())))
+    }
+
+    fn line_terminator(&self) -> Option<LineTerminator> {
+        Some(LineTerminator::byte(b'\n'))
+    }
+}
+
+struct FffRuntimeSink<'a> {
+    runtime: &'a RuntimeDb,
+    pattern_refs: &'a [&'a str],
+    matcher: &'a AhoCorasick,
+    path: &'a Path,
+    detections: &'a mut Vec<DetectedFeature>,
+    seen: &'a mut HashSet<(String, PathBuf, u64, u64)>,
+}
+
+impl Sink for FffRuntimeSink<'_> {
+    type Error = io::Error;
+
+    fn matched(&mut self, _searcher: &Searcher, matched: &SinkMatch<'_>) -> io::Result<bool> {
+        let Ok(line) = std::str::from_utf8(matched.bytes()) else {
+            return Ok(true);
+        };
+        let line = line.trim_end_matches(['\r', '\n']);
+        let line_number = matched.line_number().unwrap_or(1);
+
+        for found in self.matcher.find_iter(line) {
+            let pattern = self.pattern_refs[found.pattern()];
+            if !is_fast_match(self.runtime, line, found.start(), found.end(), pattern) {
+                continue;
+            }
+            let Some(feature) = self.runtime.feature_for_pattern(pattern) else {
+                continue;
+            };
+            push_detection(
+                self.detections,
+                self.seen,
+                feature,
+                self.path.to_path_buf(),
+                line_number,
+                (found.start() + 1) as u64,
+            );
+        }
+
+        Ok(true)
+    }
+}
+
+impl SourceScan {
+    pub fn files(&self) -> &[SourceFile] {
+        &self.files
+    }
+
+    pub fn stats(&self) -> ScanStats {
+        self.stats
+    }
+}
+
+pub fn push_detection(
+    detections: &mut Vec<DetectedFeature>,
+    seen: &mut HashSet<(String, PathBuf, u64, u64)>,
+    feature: &Feature,
+    path: PathBuf,
+    line: u64,
+    column: u64,
+) {
+    let key = (feature.name.clone(), path.clone(), line, column);
+    if seen.insert(key) {
+        detections.push(DetectedFeature {
+            feature: feature.name.clone(),
+            version: feature.version,
+            path,
+            line,
+            column,
+            count: 1,
+        });
+    }
+}
+
+pub fn is_source_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some("js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts")
+    )
+}
+
+fn is_ignored_dir(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    matches!(
+        name,
+        ".git" | "node_modules" | "dist" | "build" | "coverage" | "target"
+    )
+}
+
+fn count_lines(text: &str) -> usize {
+    if text.is_empty() {
+        0
+    } else {
+        text.lines().count()
+    }
+}
+
+fn is_fast_match(runtime: &RuntimeDb, line: &str, start: usize, end: usize, pattern: &str) -> bool {
+    (runtime.is_property_pattern(pattern) && is_property_access(line, start, end))
+        || (runtime.is_global_or_member_pattern(pattern)
+            && is_safe_global_or_member_pattern(pattern)
+            && has_identifier_boundaries(line, start, end))
+}
+
+fn is_safe_global_or_member_pattern(pattern: &str) -> bool {
+    pattern.contains('.')
+        || pattern
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_uppercase())
+        || matches!(
+            pattern,
+            "alert"
+                | "atob"
+                | "btoa"
+                | "caches"
+                | "cancelAnimationFrame"
+                | "cancelIdleCallback"
+                | "clearImmediate"
+                | "clearInterval"
+                | "clearTimeout"
+                | "console"
+                | "crypto"
+                | "document"
+                | "fetch"
+                | "global"
+                | "globalThis"
+                | "indexedDB"
+                | "localStorage"
+                | "location"
+                | "navigator"
+                | "performance"
+                | "process"
+                | "queueMicrotask"
+                | "reportError"
+                | "requestAnimationFrame"
+                | "requestIdleCallback"
+                | "self"
+                | "sessionStorage"
+                | "setImmediate"
+                | "setInterval"
+                | "setTimeout"
+                | "structuredClone"
+                | "window"
+        )
+}
+
+fn is_property_access(line: &str, start: usize, end: usize) -> bool {
+    previous_char(line, start) == Some('.')
+        && !next_char(line, end).is_some_and(is_js_identifier_part)
+}
+
+fn has_identifier_boundaries(line: &str, start: usize, end: usize) -> bool {
+    !previous_char(line, start).is_some_and(|ch| is_js_identifier_part(ch) || ch == '.')
+        && !next_char(line, end).is_some_and(is_js_identifier_part)
+}
+
+fn previous_char(text: &str, index: usize) -> Option<char> {
+    text.get(..index)?.chars().next_back()
+}
+
+fn next_char(text: &str, index: usize) -> Option<char> {
+    text.get(index..)?.chars().next()
+}
+
+fn is_js_identifier_part(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_' || ch == '$'
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use crate::{data::node_runtime, scanner::Scanner};
+
+    use super::SourceDiscovery;
+
+    #[test]
+    fn source_discovery_filters_before_scanners_run() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("app.ts"), "Temporal.Now.instant();\n").unwrap();
+        fs::write(dir.path().join("README.md"), "Temporal.Now.instant();\n").unwrap();
+
+        for ignored in [
+            "node_modules",
+            ".git",
+            "dist",
+            "build",
+            "coverage",
+            "target",
+        ] {
+            let ignored_dir = dir.path().join(ignored);
+            fs::create_dir(&ignored_dir).unwrap();
+            fs::write(ignored_dir.join("ignored.ts"), "Temporal.Now.instant();\n").unwrap();
+        }
+
+        let scan = SourceDiscovery
+            .scan(dir.path(), node_runtime().unwrap())
+            .unwrap();
+
+        assert_eq!(scan.stats().line_count, 1);
+        assert_eq!(scan.files().len(), 1);
+        assert_eq!(scan.files()[0].path.file_name().unwrap(), "app.ts");
+    }
+}
