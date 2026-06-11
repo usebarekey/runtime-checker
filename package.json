@@ -26,8 +26,7 @@
     "check": "cargo clippy --all-targets -- -D warnings",
     "test": "cargo test",
     "postinstall": "node ./npm/postinstall.js",
-    "publish:npm": "npm publish --access public",
-    "publish:jsr": "npx --yes jsr publish"
+    "publish:npm": "npm publish --access public"
   },
   "publishConfig": {
     "access": "public"

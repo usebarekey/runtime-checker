@@ -8,8 +8,6 @@ on:
       - Cargo.toml
       - Cargo.lock
       - package.json
-      - jsr.json
-      - jsr/**
       - npm/**
       - src/**
     tags:
@@ -45,13 +43,11 @@ jobs:
         run: |
           CARGO_VERSION="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
           NPM_VERSION="$(node -p "require('./package.json').version")"
-          JSR_VERSION="$(node -e "const fs=require('fs'); const config=JSON.parse(fs.readFileSync('./jsr.json', 'utf8')); process.stdout.write(config.version ?? '')")"
 
-          if [ "$CARGO_VERSION" != "$NPM_VERSION" ] || [ "$CARGO_VERSION" != "$JSR_VERSION" ]; then
+          if [ "$CARGO_VERSION" != "$NPM_VERSION" ]; then
             echo "Release versions are out of sync." >&2
             echo "cargo: $CARGO_VERSION" >&2
             echo "npm: $NPM_VERSION" >&2
-            echo "jsr: $JSR_VERSION" >&2
             exit 1
           fi
 
@@ -77,7 +73,7 @@ jobs:
             exit 0
           fi
 
-          if git diff --unified=0 "${{ github.event.before }}" "${{ github.sha }}" -- Cargo.toml package.json jsr.json | grep -Eq '^[+-].*(version[[:space:]]*=|"version":[[:space:]])'; then
+          if git diff --unified=0 "${{ github.event.before }}" "${{ github.sha }}" -- Cargo.toml package.json | grep -Eq '^[+-].*(version[[:space:]]*=|"version":[[:space:]])'; then
             echo "has_version_bump=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_version_bump=false" >> "$GITHUB_OUTPUT"
@@ -209,16 +205,3 @@ jobs:
           else
             gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "runtime-checker $RELEASE_VERSION"
           fi
-
-  jsr:
-    needs: detect_version_bump
-    if: github.event_name == 'workflow_dispatch' && vars.PUBLISH_JSR == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v4
-
-      - name: publish_to_jsr
-        timeout-minutes: 10
-        run: npx --yes jsr publish
