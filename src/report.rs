@@ -4,7 +4,7 @@ use anstyle::{AnsiColor, Style};
 use terminal_size::{Width, terminal_size};
 
 use crate::{
-    engines::EnginesReport,
+    engines::{EnginesReport, EnginesSeverity},
     scanner::{DetectedFeature, ScanStats},
     version::RuntimeVersion,
 };
@@ -286,8 +286,12 @@ fn engines_notice(root: &Path, engines: &EnginesReport) -> PanelNotice {
             ),
         }
     } else if let Some(declared) = &engines.declared {
+        let kind = match engines.severity {
+            EnginesSeverity::Info => NoticeKind::Info,
+            EnginesSeverity::Warning => NoticeKind::Warning,
+        };
         PanelNotice {
-            kind: NoticeKind::Warning,
+            kind,
             message: format!(
                 "Detected Node.js {} but {} declares engines.node {}. Apply a fix with --fix.",
                 engines.required,
@@ -377,6 +381,7 @@ fn print_result_panel(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NoticeKind {
+    Info,
     Warning,
     Update,
 }
@@ -396,17 +401,14 @@ fn panel_notices(root: &Path, reports: &[RuntimeReport]) -> Vec<PanelNotice> {
 }
 
 fn print_notice_group(notices: &[PanelNotice]) {
-    let has_warnings = notices
-        .iter()
-        .any(|notice| notice.kind == NoticeKind::Warning);
-    let title = if has_warnings { "Warnings" } else { "Updates" };
-    println!("{}", bold_fg_rgb(title, WHITE));
     for notice in notices {
         let color = match notice.kind {
+            NoticeKind::Info => NEUTRAL_400,
             NoticeKind::Warning => WARNING_RED,
             NoticeKind::Update => NODE_GREEN,
         };
         let icon = match notice.kind {
+            NoticeKind::Info => "ⓘ",
             NoticeKind::Warning => "⚠",
             NoticeKind::Update => "✓",
         };

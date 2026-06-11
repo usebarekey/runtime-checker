@@ -448,7 +448,7 @@ fn warns_and_fixes_engines_node() {
         .clone();
     let warning = String::from_utf8_lossy(&warning);
     let warning = visible_text(&warning);
-    assert!(warning.contains("Warnings"));
+    assert!(!warning.contains("Warnings"));
     assert!(warning.contains("⚠ Detected Node.js"));
     assert!(warning.contains("--fix"));
 
@@ -461,4 +461,30 @@ fn warns_and_fixes_engines_node() {
         .success();
     let package = fs::read_to_string(dir.path().join("package.json")).unwrap();
     assert!(package.contains(r#""node": ">=26.0.0""#));
+}
+
+#[test]
+fn renders_stricter_engines_node_as_info() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("date.ts"), "fetch('/api');\n").unwrap();
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"name":"fixture","engines":{"node":"^24.13.1"}}"#,
+    )
+    .unwrap();
+
+    let output = command()
+        .arg(dir.path())
+        .arg("--runtime")
+        .arg("node")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+    assert!(!visible.contains("Warnings"));
+    assert!(visible.contains("ⓘ Detected Node.js"));
+    assert!(!visible.contains("⚠ Detected Node.js"));
 }

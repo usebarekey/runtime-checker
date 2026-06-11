@@ -12,6 +12,13 @@ pub struct EnginesReport {
     pub declared: Option<String>,
     pub required: RuntimeVersion,
     pub fixed: bool,
+    pub severity: EnginesSeverity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnginesSeverity {
+    Info,
+    Warning,
 }
 
 pub fn check_engines(
@@ -37,6 +44,10 @@ pub fn check_engines(
     let compatible = declared
         .as_deref()
         .is_some_and(|range| range_allows_required(range, required));
+    let severity = declared
+        .as_deref()
+        .map(|range| engines_severity(range, required))
+        .unwrap_or(EnginesSeverity::Warning);
     let needs_fix = !required.is_zero() && !compatible;
 
     let mut fixed = false;
@@ -56,6 +67,7 @@ pub fn check_engines(
             declared,
             required,
             fixed,
+            severity,
         }))
     } else {
         Ok(None)
@@ -86,9 +98,26 @@ fn set_engines_node(json: &mut Value, value: &str) -> Result<()> {
     Ok(())
 }
 
+fn engines_severity(range: &str, required: RuntimeVersion) -> EnginesSeverity {
+    if declared_lower_bound(range).is_some_and(|declared| declared > required) {
+        EnginesSeverity::Info
+    } else {
+        EnginesSeverity::Warning
+    }
+}
+
+fn declared_lower_bound(range: &str) -> Option<RuntimeVersion> {
+    let start = range.find(|ch: char| ch.is_ascii_digit())?;
+    let version = range[start..]
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit() || *ch == '.')
+        .collect::<String>();
+    version.parse().ok()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::range_allows_required;
+    use super::{EnginesSeverity, engines_severity, range_allows_required};
     use crate::version::RuntimeVersion;
 
     #[test]
@@ -100,5 +129,26 @@ mod tests {
         };
         assert!(range_allows_required(">=22", required));
         assert!(!range_allows_required("^22.0.0", required));
+    }
+
+    #[test]
+    fn classifies_stricter_ranges_as_info() {
+        let required = RuntimeVersion {
+            major: 24,
+            minor: 0,
+            patch: 0,
+        };
+        assert_eq!(
+            engines_severity("^24.13.1", required),
+            EnginesSeverity::Info
+        );
+        assert_eq!(
+            engines_severity(">=24.13.1", required),
+            EnginesSeverity::Info
+        );
+        assert_eq!(
+            engines_severity("^23.0.0", required),
+            EnginesSeverity::Warning
+        );
     }
 }
