@@ -442,10 +442,7 @@ fn print_summary_group<'a>(
         println!(
             "{} {}{} {}{}",
             fg_rgb("-", NEUTRAL_700),
-            fg_rgb(
-                runtime_label(&report.runtime),
-                runtime_theme_color(&report.runtime)
-            ),
+            fg_rgb(runtime_label(&report.runtime), NEUTRAL_400),
             marker,
             fg_rgb(
                 report.minimum.to_string(),
@@ -595,11 +592,6 @@ const NEUTRAL_700: Rgb = (64, 64, 64);
 const NEUTRAL_600: Rgb = (82, 82, 82);
 const WARNING_RED: Rgb = (248, 113, 113);
 const NODE_GREEN: Rgb = (104, 160, 99);
-const DENO_CYAN: Rgb = (112, 255, 175);
-const BUN_ORANGE: Rgb = (249, 160, 63);
-const SAFARI_BLUE: Rgb = (10, 132, 255);
-const CHROME_BLUE: Rgb = (66, 133, 244);
-const FIREFOX_ORANGE: Rgb = (255, 113, 57);
 const WHITE: Rgb = (255, 255, 255);
 
 fn runtime_label(runtime: &str) -> &'static str {
@@ -611,18 +603,6 @@ fn runtime_label(runtime: &str) -> &'static str {
         "chrome" => "Chromium",
         "firefox" => "Firefox",
         _ => "Runtime",
-    }
-}
-
-fn runtime_theme_color(runtime: &str) -> Rgb {
-    match runtime {
-        "node" => NODE_GREEN,
-        "deno" => DENO_CYAN,
-        "bun" => BUN_ORANGE,
-        "safari" => SAFARI_BLUE,
-        "chrome" => CHROME_BLUE,
-        "firefox" => FIREFOX_ORANGE,
-        _ => SKY_500,
     }
 }
 
