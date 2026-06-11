@@ -1,0 +1,17 @@
+{
+  "name": "@barekey/runtime-checker",
+  "version": "0.1.0",
+  "license": "BSD-3-Clause",
+  "exports": {
+    ".": "./jsr/mod.ts"
+  },
+  "publish": {
+    "exclude": [
+      ".cargo",
+      ".github",
+      "tests",
+      "target",
+      "npm/bin/native"
+    ]
+  }
+}

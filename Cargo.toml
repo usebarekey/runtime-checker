@@ -2,6 +2,13 @@
 name = "runtime-checker"
 version = "0.1.0"
 edition = "2024"
+description = "Detect minimum runtime versions required by JavaScript and TypeScript codebases."
+license = "BSD-3-Clause"
+repository = "https://github.com/usebarekey/runtime-checker"
+homepage = "https://github.com/usebarekey/runtime-checker"
+readme = "README.md"
+keywords = ["node", "deno", "bun", "runtime", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 aho-corasick = "1.1.4"

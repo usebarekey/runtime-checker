@@ -1,0 +1,157 @@
+name: release
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - Cargo.toml
+      - package.json
+      - jsr.json
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect_version_bump:
+    runs-on: ubuntu-latest
+
+    outputs:
+      has_version_bump: ${{ steps.detect.outputs.has_version_bump }}
+      release_version: ${{ steps.resolve.outputs.release_version }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: resolve_release_version
+        id: resolve
+        shell: bash
+        run: |
+          CARGO_VERSION="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
+          NPM_VERSION="$(node -p "require('./package.json').version")"
+          JSR_VERSION="$(node -e "const fs=require('fs'); const config=JSON.parse(fs.readFileSync('./jsr.json', 'utf8')); process.stdout.write(config.version ?? '')")"
+
+          if [ "$CARGO_VERSION" != "$NPM_VERSION" ] || [ "$CARGO_VERSION" != "$JSR_VERSION" ]; then
+            echo "Release versions are out of sync." >&2
+            echo "cargo: $CARGO_VERSION" >&2
+            echo "npm: $NPM_VERSION" >&2
+            echo "jsr: $JSR_VERSION" >&2
+            exit 1
+          fi
+
+          echo "release_version=$CARGO_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$CARGO_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: detect_version_bump
+        id: detect
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "has_version_bump=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.ref }}" = "refs/tags/${{ steps.resolve.outputs.tag_name }}" ]; then
+            echo "has_version_bump=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.ref }}" != "refs/heads/master" ]; then
+            echo "has_version_bump=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --unified=0 "${{ github.event.before }}" "${{ github.sha }}" -- Cargo.toml package.json jsr.json | grep -Eq '^[+-].*(version[[:space:]]*=|"version":[[:space:]])'; then
+            echo "has_version_bump=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_version_bump=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: detect_version_bump
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/master' && needs.detect_version_bump.outputs.has_version_bump == 'true')
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: setup_rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: setup_node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: resolve_release_version
+        shell: bash
+        run: |
+          echo "TAG_NAME=${{ needs.detect_version_bump.outputs.tag_name }}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${{ needs.detect_version_bump.outputs.release_version }}" >> "$GITHUB_ENV"
+
+      - name: ensure_tag_exists
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
+        run: |
+          git fetch --tags
+
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG_NAME" "${GITHUB_SHA}"
+          git push origin "$TAG_NAME"
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: test
+        run: cargo test
+
+      - name: build
+        run: cargo build --release
+
+      - name: pack_npm
+        run: npm pack
+
+      - name: publish_to_jsr
+        timeout-minutes: 10
+        run: npx --yes jsr publish
+
+      - name: publish_to_npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
+
+      - name: create_or_update_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes "runtime-checker $RELEASE_VERSION"
+          else
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "runtime-checker $RELEASE_VERSION"
+          fi
