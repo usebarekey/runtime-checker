@@ -128,6 +128,16 @@ fn help_uses_barekey_style_sections() {
 }
 
 #[test]
+fn no_args_prints_help() {
+    let output = command().assert().success().get_output().stdout.clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    assert!(visible.contains("Usage »"));
+    assert!(visible.contains("runtime-checker <dir> [options]"));
+}
+
+#[test]
 fn browser_summary_marks_node_api_incompatibility() {
     let dir = tempdir().unwrap();
     fs::write(
@@ -154,6 +164,28 @@ fn browser_summary_marks_node_api_incompatibility() {
     assert!(visible.contains("¹ Safari does not support Node APIs."));
     assert!(visible.contains("² Chromium does not support Node APIs."));
     assert!(visible.contains("³ Firefox does not support Node APIs."));
+}
+
+#[test]
+fn browser_only_summary_marks_node_api_incompatibility() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("process.ts"), "process.cwd();\n").unwrap();
+
+    let output = command()
+        .arg(dir.path())
+        .arg("--runtime")
+        .arg("chrome")
+        .arg("--summary")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    assert!(visible.contains("Chromium¹"));
+    assert!(visible.contains("¹ Chromium does not support Node APIs."));
 }
 
 #[test]

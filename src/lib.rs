@@ -64,19 +64,27 @@ fn scan_fast(
     aggregate: bool,
     fix: bool,
 ) -> Result<Vec<RuntimeReport>> {
-    let runtimes = targets
+    let target_runtimes = targets
         .iter()
         .copied()
         .map(runtime)
         .collect::<Result<Vec<_>>>()?;
-    let detections_by_runtime = FffMultiRuntimeScanner.scan_files(&runtimes, sources.files())?;
-    let mut reports = Vec::with_capacity(runtimes.len());
+    let scan_plan = ScanPlan::new(targets, &target_runtimes)?;
+    let detections_by_runtime =
+        FffMultiRuntimeScanner.scan_files(&scan_plan.runtimes, sources.files())?;
+    let hidden_node_api_detected = scan_plan
+        .hidden_node_index
+        .and_then(|index| detections_by_runtime.get(index))
+        .is_some_and(|detections| has_node_api_detections(detections));
+    let mut reports = Vec::with_capacity(target_runtimes.len());
 
-    for (runtime, detections) in runtimes.into_iter().zip(detections_by_runtime) {
+    for (runtime, detections) in target_runtimes.into_iter().zip(detections_by_runtime) {
+        let node_api_detected = hidden_node_api_detected || has_node_api_detections(&detections);
         reports.push(build_runtime_report(
             root,
             runtime.name(),
             detections,
+            node_api_detected,
             aggregate,
             fix,
         )?);
@@ -92,20 +100,27 @@ fn scan_ast(
     aggregate: bool,
     fix: bool,
 ) -> Result<Vec<RuntimeReport>> {
-    let runtimes = targets
+    let target_runtimes = targets
         .iter()
         .copied()
         .map(runtime)
         .collect::<Result<Vec<_>>>()?;
+    let scan_plan = ScanPlan::new(targets, &target_runtimes)?;
     let detections_by_runtime =
-        analyzer::analyze_files_for_runtimes(root, sources.files(), &runtimes)?;
+        analyzer::analyze_files_for_runtimes(root, sources.files(), &scan_plan.runtimes)?;
+    let hidden_node_api_detected = scan_plan
+        .hidden_node_index
+        .and_then(|index| detections_by_runtime.get(index))
+        .is_some_and(|detections| has_node_api_detections(detections));
     let mut reports = Vec::with_capacity(targets.len());
 
-    for (runtime, detections) in runtimes.into_iter().zip(detections_by_runtime) {
+    for (runtime, detections) in target_runtimes.into_iter().zip(detections_by_runtime) {
+        let node_api_detected = hidden_node_api_detected || has_node_api_detections(&detections);
         reports.push(build_runtime_report(
             root,
             runtime.name(),
             detections,
+            node_api_detected,
             aggregate,
             fix,
         )?);
@@ -118,6 +133,7 @@ fn build_runtime_report(
     root: &std::path::Path,
     runtime_name: &str,
     mut detections: Vec<DetectedFeature>,
+    has_node_api_detections: bool,
     aggregate: bool,
     fix: bool,
 ) -> Result<RuntimeReport> {
@@ -143,7 +159,46 @@ fn build_runtime_report(
         detections,
         minimum,
         engines,
+        has_node_api_detections,
     })
+}
+
+struct ScanPlan<'a> {
+    runtimes: Vec<&'a data::RuntimeDb>,
+    hidden_node_index: Option<usize>,
+}
+
+impl<'a> ScanPlan<'a> {
+    fn new(targets: &[RuntimeKind], target_runtimes: &[&'a data::RuntimeDb]) -> Result<Self> {
+        let needs_hidden_node = targets.iter().any(|target| is_browser_runtime(*target))
+            && !targets.contains(&RuntimeKind::Node);
+        let mut runtimes = target_runtimes.to_vec();
+        let hidden_node_index = if needs_hidden_node {
+            let index = runtimes.len();
+            runtimes.push(runtime(RuntimeKind::Node)?);
+            Some(index)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            runtimes,
+            hidden_node_index,
+        })
+    }
+}
+
+fn is_browser_runtime(runtime: RuntimeKind) -> bool {
+    matches!(
+        runtime,
+        RuntimeKind::Safari | RuntimeKind::Chrome | RuntimeKind::Firefox
+    )
+}
+
+fn has_node_api_detections(detections: &[DetectedFeature]) -> bool {
+    detections
+        .iter()
+        .any(|detection| report::is_node_api_feature(&detection.feature))
 }
 
 fn aggregate_feature_detections(detections: Vec<DetectedFeature>) -> Vec<DetectedFeature> {

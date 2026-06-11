@@ -14,6 +14,7 @@ pub struct RuntimeReport {
     pub detections: Vec<DetectedFeature>,
     pub minimum: RuntimeVersion,
     pub engines: Option<EnginesReport>,
+    pub has_node_api_detections: bool,
 }
 
 pub struct Reporter {
@@ -516,18 +517,10 @@ fn compatibility_footnotes(reports: &[RuntimeReport]) -> Vec<CompatibilityFootno
 }
 
 fn has_node_api_detections(reports: &[RuntimeReport]) -> bool {
-    reports
-        .iter()
-        .find(|report| report.runtime == "node")
-        .is_some_and(|report| {
-            report
-                .detections
-                .iter()
-                .any(|detection| is_node_api_feature(&detection.feature))
-        })
+    reports.iter().any(|report| report.has_node_api_detections)
 }
 
-fn is_node_api_feature(feature: &str) -> bool {
+pub(crate) fn is_node_api_feature(feature: &str) -> bool {
     let root = feature.split('.').next().unwrap_or(feature);
     matches!(
         root,
