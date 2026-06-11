@@ -1,30 +1,26 @@
 # runtime-checker
+Detects the minimum version needed for **Node.js**, **Bun**, **Deno** and browsers to execute your codebase.
 
-Detect the minimum runtime versions required by a JavaScript or TypeScript codebase.
-
-```bash
-runtime-checker <dir>
-runtime-checker <dir> --fast
-runtime-checker <dir> --summary
-runtime-checker <dir> --runtime node
+## Installation
+```sh
+deno add npm:runtime-checker
+bun add runtime-checker
+pnpm add runtime-checker
+npm install runtime-checker
 ```
 
-The default scanner uses Oxc AST parsing. `--fast` uses the FFF-backed text scanner and can report false positives from comments, strings, or shadowed local names.
+## Usage
+`$ runtime-checker <dir>`
 
-## Install
+### Arguments
+ `--fast:` uses [fff](https://github.com/dmtrKovalenko/fff) instead of oxc AST parsing. Faster<sup>1</sup>, but less accurate.
+ 
+ <sup>1</sup> fff is only faster (and actually slower!) than oxc when your codebase is around 250,000~ or more lines of code, from testing on a Windows machine with a 9800X3D.
 
-```bash
-cargo install runtime-checker
-```
+ `--fix`: Automatically fixes your `engines.node` field to a supported version if an issue is found.
 
-The npm package builds the Rust binary during install:
+ `--inspect <symbol, e.g.: Symbol.asyncDispose>`: Shows each detection of a specific symbol
 
-```bash
-npm install -g runtime-checker
-```
+ `--summary`: Only prints the summary
 
-That path requires a local Rust toolchain. Prebuilt npm binaries can be added later without changing the CLI command.
-
-## License
-
-BSD-3-Clause.
+ `--runtime <all|deno|bun|node|safari|chrome|firefox>`: Only shows the results for a specific runtime
