@@ -1,19 +1,19 @@
 {
   "name": "runtime-checker",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Detect minimum runtime versions required by JavaScript and TypeScript codebases.",
   "license": "BSD-3-Clause",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/usebarekey/runtime-checker.git"
+    "url": "git+https://github.com/usebarekey/runtime-checker.git"
   },
   "homepage": "https://github.com/usebarekey/runtime-checker",
   "bugs": {
     "url": "https://github.com/usebarekey/runtime-checker/issues"
   },
   "bin": {
-    "runtime-checker": "./npm/bin/runtime-checker.js"
+    "runtime-checker": "npm/bin/runtime-checker.js"
   },
   "files": [
     "LICENSE",
@@ -26,7 +26,7 @@
     "check": "cargo clippy --all-targets -- -D warnings",
     "test": "cargo test",
     "postinstall": "node ./npm/postinstall.js",
-    "publish:npm": "npm publish --access public --provenance",
+    "publish:npm": "npm publish --access public",
     "publish:jsr": "npx --yes jsr publish"
   },
   "publishConfig": {
