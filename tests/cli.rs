@@ -118,12 +118,13 @@ fn help_uses_barekey_style_sections() {
     let output = String::from_utf8_lossy(&output);
     let visible = visible_text(&output);
 
-    assert!(visible.contains("─ runtime-checker  0.1.0"));
+    assert!(visible.contains("─ runtime-checker  1.0.0"));
     assert!(visible.contains("Usage »"));
     assert!(visible.contains("Arguments »"));
     assert!(visible.contains("Options »"));
     assert!(visible.contains("runtime-checker <dir> [options]"));
-    assert!(visible.contains("--summary, --oneline"));
+    assert!(visible.contains("--summary"));
+    assert!(!visible.contains("--oneline"));
     assert!(visible.contains("-h, --help"));
 }
 

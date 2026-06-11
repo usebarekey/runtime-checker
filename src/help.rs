@@ -31,7 +31,7 @@ fn create_help_body() -> String {
                     &["--runtime <runtime>"],
                     "target all, node, deno, bun, safari, chrome, or firefox",
                 ),
-                option_row(&["--summary", "--oneline"], "print only the summary panel"),
+                option_row(&["--summary"], "print only the summary panel"),
                 option_row(
                     &["--inspect <feature>"],
                     "print every detection for one feature",

@@ -58,7 +58,7 @@ pub struct Cli {
     pub runtime: RuntimeKind,
 
     /// Print only the summary panel.
-    #[arg(long, alias = "oneline")]
+    #[arg(long)]
     pub summary: bool,
 
     /// Print every detection for one feature instead of grouped summaries.
