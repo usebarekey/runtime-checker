@@ -2,6 +2,7 @@ mod analyzer;
 mod cli;
 mod data;
 mod engines;
+mod help;
 mod report;
 mod scanner;
 mod version;
@@ -16,6 +17,7 @@ static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 pub use cli::{Cli, RuntimeKind};
 use data::runtime;
 use engines::check_engines;
+pub use help::print_help;
 use report::{ParserMode, Reporter, RuntimeReport};
 use scanner::{DetectedFeature, FffMultiRuntimeScanner, Scanner, SourceDiscovery, SourceScan};
 

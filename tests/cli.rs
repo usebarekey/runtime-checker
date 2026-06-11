@@ -107,6 +107,27 @@ fn summary_prints_only_result_panel() {
 }
 
 #[test]
+fn help_uses_barekey_style_sections() {
+    let output = command()
+        .arg("--help")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    assert!(visible.contains("─ runtime-checker  0.1.0"));
+    assert!(visible.contains("Usage »"));
+    assert!(visible.contains("Arguments »"));
+    assert!(visible.contains("Options »"));
+    assert!(visible.contains("runtime-checker <dir> [options]"));
+    assert!(visible.contains("--summary, --oneline"));
+    assert!(visible.contains("-h, --help"));
+}
+
+#[test]
 fn browser_summary_marks_node_api_incompatibility() {
     let dir = tempdir().unwrap();
     fs::write(
