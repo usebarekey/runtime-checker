@@ -11,7 +11,16 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-15-intel
+          - macos-15
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: checkout
@@ -28,3 +37,6 @@ jobs:
 
       - name: test
         run: cargo test
+
+      - name: build_release
+        run: cargo build --release

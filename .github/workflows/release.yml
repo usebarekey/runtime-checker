@@ -6,8 +6,12 @@ on:
       - master
     paths:
       - Cargo.toml
+      - Cargo.lock
       - package.json
       - jsr.json
+      - jsr/**
+      - npm/**
+      - src/**
     tags:
       - "v*"
   workflow_dispatch:
@@ -79,8 +83,48 @@ jobs:
             echo "has_version_bump=false" >> "$GITHUB_OUTPUT"
           fi
 
-  npm:
+  native:
     needs: detect_version_bump
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/master' && needs.detect_version_bump.outputs.has_version_bump == 'true')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            binary: runtime-checker
+          - os: windows-latest
+            target: win32-x64
+            binary: runtime-checker.exe
+          - os: macos-15-intel
+            target: darwin-x64
+            binary: runtime-checker
+          - os: macos-15
+            target: darwin-arm64
+            binary: runtime-checker
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: setup_rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: build
+        run: cargo build --release
+
+      - name: upload_binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: target/release/${{ matrix.binary }}
+          if-no-files-found: error
+
+  npm:
+    needs:
+      - detect_version_bump
+      - native
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/master' && needs.detect_version_bump.outputs.has_version_bump == 'true')
     runs-on: ubuntu-latest
     environment: release
@@ -132,6 +176,22 @@ jobs:
 
       - name: build
         run: cargo build --release
+
+      - name: download_native_binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: .dist/native
+
+      - name: stage_native_binaries
+        shell: bash
+        run: |
+          mkdir -p npm/bin/native/linux-x64 npm/bin/native/win32-x64 npm/bin/native/darwin-x64 npm/bin/native/darwin-arm64
+          cp .dist/native/native-linux-x64/runtime-checker npm/bin/native/linux-x64/runtime-checker
+          cp .dist/native/native-win32-x64/runtime-checker.exe npm/bin/native/win32-x64/runtime-checker.exe
+          cp .dist/native/native-darwin-x64/runtime-checker npm/bin/native/darwin-x64/runtime-checker
+          cp .dist/native/native-darwin-arm64/runtime-checker npm/bin/native/darwin-arm64/runtime-checker
+          chmod +x npm/bin/native/linux-x64/runtime-checker npm/bin/native/darwin-x64/runtime-checker npm/bin/native/darwin-arm64/runtime-checker
 
       - name: pack_npm
         run: npm pack
