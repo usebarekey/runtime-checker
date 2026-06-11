@@ -193,7 +193,7 @@ jobs:
         run: npm pack
 
       - name: publish_to_npm
-        run: npm publish --access public
+        run: npx --yes npm@11.5.1 publish --access public
 
       - name: create_or_update_release
         env:
