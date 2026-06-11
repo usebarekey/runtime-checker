@@ -42,15 +42,7 @@ impl Reporter {
             self.print_groups(root, reports);
         }
 
-        print_result_panel(self.parser, reports, elapsed, stats);
-
-        if !self.summary {
-            for report in reports {
-                if let Some(engines) = &report.engines {
-                    print_engines_report(root, engines);
-                }
-            }
-        }
+        print_result_panel(root, self.parser, reports, elapsed, stats);
     }
 
     fn print_groups(&self, root: &Path, reports: &[RuntimeReport]) {
@@ -279,47 +271,44 @@ fn feature_label(feature: &str, count: usize) -> String {
     }
 }
 
-fn print_engines_report(root: &Path, engines: &EnginesReport) {
+fn engines_notice(root: &Path, engines: &EnginesReport) -> PanelNotice {
     let package = engines
         .package_json
         .strip_prefix(root)
         .unwrap_or(&engines.package_json);
     if engines.fixed {
-        println!(
-            "{}Updated {} engines.node to {}>={}.{}",
-            green(),
-            package.display(),
-            yellow(),
-            engines.required,
-            reset()
-        );
+        PanelNotice {
+            kind: NoticeKind::Update,
+            message: format!(
+                "Updated {} engines.node to >={}.",
+                package.display(),
+                engines.required
+            ),
+        }
     } else if let Some(declared) = &engines.declared {
-        println!(
-            "{}Warning: detected Node.js {}{}{} but {} declares engines.node {}{}{}. Apply a fix with --fix.{}",
-            light_gray(),
-            yellow(),
-            engines.required,
-            light_gray(),
-            package.display(),
-            yellow(),
-            declared,
-            light_gray(),
-            reset()
-        );
+        PanelNotice {
+            kind: NoticeKind::Warning,
+            message: format!(
+                "Detected Node.js {} but {} declares engines.node {}. Apply a fix with --fix.",
+                engines.required,
+                package.display(),
+                declared
+            ),
+        }
     } else {
-        println!(
-            "{}Warning: detected Node.js {}{}{} but {} has no engines.node. Apply a fix with --fix.{}",
-            light_gray(),
-            yellow(),
-            engines.required,
-            light_gray(),
-            package.display(),
-            reset()
-        );
+        PanelNotice {
+            kind: NoticeKind::Warning,
+            message: format!(
+                "Detected Node.js {} but {} has no engines.node. Apply a fix with --fix.",
+                engines.required,
+                package.display()
+            ),
+        }
     }
 }
 
 fn print_result_panel(
+    root: &Path,
     parser: ParserMode,
     reports: &[RuntimeReport],
     elapsed: Duration,
@@ -375,10 +364,60 @@ fn print_result_panel(
                 )
             );
         }
+    }
+
+    let notices = panel_notices(root, reports);
+    if !notices.is_empty() {
         println!();
+        print_notice_group(&notices);
     }
 
     println!("{}", create_rule());
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoticeKind {
+    Warning,
+    Update,
+}
+
+#[derive(Debug)]
+struct PanelNotice {
+    kind: NoticeKind,
+    message: String,
+}
+
+fn panel_notices(root: &Path, reports: &[RuntimeReport]) -> Vec<PanelNotice> {
+    reports
+        .iter()
+        .filter_map(|report| report.engines.as_ref())
+        .map(|engines| engines_notice(root, engines))
+        .collect()
+}
+
+fn print_notice_group(notices: &[PanelNotice]) {
+    let has_warnings = notices
+        .iter()
+        .any(|notice| notice.kind == NoticeKind::Warning);
+    let title = if has_warnings { "Warnings" } else { "Updates" };
+    println!("{}", bold_fg_rgb(title, WHITE));
+    for notice in notices {
+        let color = match notice.kind {
+            NoticeKind::Warning => WARNING_RED,
+            NoticeKind::Update => NODE_GREEN,
+        };
+        let icon = match notice.kind {
+            NoticeKind::Warning => "⚠",
+            NoticeKind::Update => "✓",
+        };
+        println!(
+            "{} {}{}",
+            fg_rgb(icon, color),
+            fg_rgb(&notice.message, color),
+            reset()
+        );
+    }
+    println!();
 }
 
 fn print_summary_group<'a>(
@@ -760,10 +799,6 @@ fn format_duration_unit(value: f64, suffix: &str) -> String {
     };
 
     format!("{text}{suffix}")
-}
-
-fn green() -> Style {
-    Style::new().fg_color(Some(AnsiColor::Green.into()))
 }
 
 fn yellow() -> Style {

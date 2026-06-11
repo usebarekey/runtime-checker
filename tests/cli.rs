@@ -447,7 +447,9 @@ fn warns_and_fixes_engines_node() {
         .stdout
         .clone();
     let warning = String::from_utf8_lossy(&warning);
-    assert!(warning.contains("Warning: detected Node"));
+    let warning = visible_text(&warning);
+    assert!(warning.contains("Warnings"));
+    assert!(warning.contains("⚠ Detected Node.js"));
     assert!(warning.contains("--fix"));
 
     command()
