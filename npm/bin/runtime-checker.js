@@ -11,7 +11,7 @@ const native = join(root, "npm", "bin", "native", target, exe);
 
 if (!existsSync(native)) {
   console.error(`runtime-checker does not have a native binary for ${target}.`);
-  console.error("Try reinstalling the package, or install Rust and run `cargo install runtime-checker`.");
+  console.error("The npm package may be corrupted, or this platform is not supported yet.");
   process.exit(1);
 }
 

@@ -118,7 +118,7 @@ fn help_uses_barekey_style_sections() {
     let output = String::from_utf8_lossy(&output);
     let visible = visible_text(&output);
 
-    assert!(visible.contains("─ runtime-checker  1.0.2"));
+    assert!(visible.contains("─ runtime-checker  1.0.3"));
     assert!(visible.contains("Usage »"));
     assert!(visible.contains("Arguments »"));
     assert!(visible.contains("Options »"));

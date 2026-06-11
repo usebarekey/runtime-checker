@@ -1,6 +1,6 @@
 {
   "name": "runtime-checker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Detect minimum runtime versions required by JavaScript and TypeScript codebases.",
   "license": "BSD-3-Clause",
   "type": "module",
@@ -18,14 +18,12 @@
   "files": [
     "LICENSE",
     "README.md",
-    "npm/bin",
-    "npm/postinstall.js"
+    "npm/bin"
   ],
   "scripts": {
     "build": "cargo build --release",
     "check": "cargo clippy --all-targets -- -D warnings",
     "test": "cargo test",
-    "postinstall": "node ./npm/postinstall.js",
     "publish:npm": "npm publish --access public"
   },
   "publishConfig": {
