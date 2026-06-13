@@ -2,6 +2,7 @@ mod analyzer;
 mod cli;
 mod data;
 mod engines;
+mod generated;
 mod help;
 mod report;
 mod scanner;

@@ -142,18 +142,15 @@ fn combined_fast_patterns<'a>(
 ) -> Vec<(&'a str, Vec<RuntimePattern<'a>>)> {
     let mut by_pattern = HashMap::<&'a str, Vec<RuntimePattern<'a>>>::new();
     for (runtime_index, runtime) in runtimes.iter().copied().enumerate() {
-        for pattern in runtime.fast_patterns() {
+        for &pattern in runtime.fast_patterns() {
             let Some(feature) = runtime.feature_for_pattern(pattern) else {
                 continue;
             };
-            by_pattern
-                .entry(pattern.as_str())
-                .or_default()
-                .push(RuntimePattern {
-                    runtime_index,
-                    runtime,
-                    feature,
-                });
+            by_pattern.entry(pattern).or_default().push(RuntimePattern {
+                runtime_index,
+                runtime,
+                feature,
+            });
         }
     }
 
@@ -257,7 +254,7 @@ pub fn push_detection(
     let key = (feature.id, file_index, line, column);
     if seen.insert(key) {
         detections.push(DetectedFeature {
-            feature: feature.name.clone(),
+            feature: feature.name.to_owned(),
             version: feature.version,
             path: path.to_path_buf(),
             line,

@@ -1,5 +1,5 @@
-//! Generated from MDN @mdn/browser-compat-data 8.0.2 runtime `bun`.
-//! Regenerate with: cargo run --bin generate-mdn-data -- --output-dir data/mdn
+//! Legacy RON snapshot from MDN @mdn/browser-compat-data 8.0.2 runtime `bun`.
+//! Generate JSON artifacts with: python scripts/generate_mdn_data.py
 (
     schema: 1,
     runtime: "bun",
@@ -1078,7 +1078,6 @@
         (name: "setInterval", version: "1.0.0", detect: [Global("setInterval"), MemberChain("setInterval")]),
         (name: "setTimeout", version: "1.0.0", detect: [Global("setTimeout"), MemberChain("setTimeout")]),
         (name: "structuredClone", version: "1.0.0", detect: [Global("structuredClone"), MemberChain("structuredClone")]),
-        (name: "undefined", version: "1.0.0", detect: [Global("undefined"), MemberChain("undefined")]),
         (name: "unescape", version: "1.0.0", detect: [Global("unescape"), MemberChain("unescape")]),
     ],
 )
