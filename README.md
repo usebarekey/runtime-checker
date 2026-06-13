@@ -1,26 +1,60 @@
 # runtime-checker
-Detects the minimum version needed for **Node.js**, **Bun**, **Deno** and browsers to execute your codebase.
 
-## Installation
+Find the minimum runtime version needed for a JavaScript or TypeScript codebase.
+
+It parses files with Oxc and checks runtime APIs, JavaScript syntax, module format, and native TypeScript usage. It can report requirements for Node.js, Deno, Bun, Safari, Chromium, and Firefox.
+
+## install
+
 ```sh
-deno add npm:runtime-checker
-bun add runtime-checker
-pnpm add runtime-checker
 npm install runtime-checker
+pnpm add runtime-checker
+bun add runtime-checker
+deno add npm:runtime-checker
 ```
 
-## Usage
-`$ runtime-checker <dir>`
+## usage
 
-### Arguments
- `--fast:` uses [fff](https://github.com/dmtrKovalenko/fff) instead of oxc AST parsing. Faster<sup>1</sup>, but less accurate.
- 
- <sup>1</sup> fff is only faster (and actually slower!) than oxc when your codebase is around 250,000~ or more lines of code, from testing on a Windows machine with a 9800X3D.
+```sh
+runtime-checker <dir>
+```
 
- `--fix`: Automatically fixes your `engines.node` field to a supported version if an issue is found.
+For app compatibility, scan the code you ship. For bundled apps, that usually means the build output, not just `src`.
 
- `--inspect <symbol, e.g.: Symbol.asyncDispose>`: Shows each detection of a specific symbol
+## options
 
- `--summary`: Only prints the summary
+```sh
+runtime-checker <dir> --summary
+runtime-checker <dir> --runtime node
+runtime-checker <dir> --inspect Symbol.asyncDispose
+runtime-checker <dir> --fix
+```
 
- `--runtime <all|deno|bun|node|safari|chrome|firefox>`: Only shows the results for a specific runtime
+- `--summary` prints only the result panel.
+- `--runtime <all|node|deno|bun|safari|chrome|firefox>` limits output to one target.
+- `--inspect <feature>` prints every detection for a feature.
+- `--fix` updates `package.json` `engines.node` when the detected Node.js version is not satisfied.
+
+## detects
+
+- Runtime APIs such as `fetch`, `Temporal`, `fs.cp`, `sqlite.DatabaseSync`, and `Symbol.asyncDispose`.
+- JavaScript syntax such as optional chaining, nullish coalescing, ESM, `await using`, and native TypeScript support.
+- Node.js `engines.node` mismatches.
+
+## output
+
+```txt
+Finished in 665ms using oxc (ast parsing) after scanning 307k lines of code.
+
+Runtimes
+- Node.js 24.0.0
+- Deno 2.8.0
+- Bun 1.3.0
+
+Browsers
+- Safari 26.0.0
+- Chromium 149.0.0
+- Firefox 141.0.0
+```
+
+Use `--inspect <feature>` when you want to see every file and location that caused a requirement.

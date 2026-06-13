@@ -1,3 +1,5 @@
 /target
 /npm/bin/native
+/data/generated
+__pycache__/
 *.tgz

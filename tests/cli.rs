@@ -118,7 +118,7 @@ fn help_uses_barekey_style_sections() {
     let output = String::from_utf8_lossy(&output);
     let visible = visible_text(&output);
 
-    assert!(visible.contains("─ runtime-checker  1.0.4"));
+    assert!(visible.contains("─ runtime-checker  1.1.0"));
     assert!(visible.contains("Usage »"));
     assert!(visible.contains("Arguments »"));
     assert!(visible.contains("Options »"));
@@ -257,6 +257,155 @@ fn group_header_uses_lowest_detected_version_in_major() {
 }
 
 #[test]
+fn groups_syntax_entries_at_bottom_of_major_group() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("syntax.ts"),
+        "\"x\".replaceAll(\"x\", \"y\");\nlet value;\nvalue ??= 1;\nvalue ||= 2;\nvalue &&= 3;\n",
+    )
+    .unwrap();
+
+    let output = command()
+        .arg(dir.path())
+        .arg("--runtime")
+        .arg("node")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    let api = visible.find("String.replaceAll").unwrap();
+    let nullish = api + visible[api..].find("nullish assignment (??=)").unwrap();
+    let logical_or = api + visible[api..].find("logical or assignment (||=)").unwrap();
+    let logical_and = api + visible[api..].find("logical and assignment (&&=)").unwrap();
+
+    assert!(api < nullish);
+    assert!(api < logical_or);
+    assert!(api < logical_and);
+    assert!(!visible.lines().any(|line| line.trim() == "Syntax"));
+    assert!(visible.contains("v15.0.0"));
+}
+
+#[test]
+fn reports_common_modern_syntax_labels() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("syntax.ts"),
+        "const fallback = input?.name ?? \"x\";\n",
+    )
+    .unwrap();
+
+    let output = command()
+        .arg(dir.path())
+        .arg("--runtime")
+        .arg("node")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    assert!(!visible.lines().any(|line| line.trim() == "Syntax"));
+    assert!(visible.contains("optional chaining (?.)"));
+    assert!(visible.contains("nullish coalescing (??)"));
+}
+
+#[test]
+fn reports_broad_syntax_labels() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("syntax.ts"),
+        r#"
+var oldValue = 1;
+let value = 2;
+const list = [1, 2, 3];
+class Box { method() { return `${value}`; } }
+const lambda = (...items) => items.length == list.length ? /ok/u : null;
+for (const item of list) {
+  value += item;
+}
+"#,
+    )
+    .unwrap();
+
+    let output = command()
+        .arg(dir.path())
+        .arg("--runtime")
+        .arg("node")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    assert!(!visible.lines().any(|line| line.trim() == "Syntax"));
+    for expected in [
+        "variable declaration (var)",
+        "let declaration (let)",
+        "constant declaration (const)",
+        "class declaration (class)",
+        "anonymous function (() => {})",
+        "rest parameters (...args)",
+        "for of loop (for...of)",
+        "loose equality (==)",
+        "addition assignment (+=)",
+        "conditional expression (a ? b : c)",
+        "array literal ([...])",
+        "template literal (`...`)",
+        "regex literal (/.../)",
+        "null literal (null)",
+    ] {
+        assert!(visible.contains(expected), "missing {expected}");
+    }
+}
+
+#[test]
+fn reports_module_format_and_native_typescript_groups() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("entry.mts"),
+        "import value from './value.js';\nexport default value satisfies number;\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("bundle.js"),
+        "(function (root, factory) {\n  if (typeof define === 'function' && define.amd) define(factory);\n})(this, function () { return {}; });\n",
+    )
+    .unwrap();
+
+    let output = command()
+        .arg(dir.path())
+        .arg("--runtime")
+        .arg("node")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let output = String::from_utf8_lossy(&output);
+    let visible = visible_text(&output);
+
+    assert!(!visible.lines().any(|line| line.trim() == "Module formats"));
+    assert!(visible.contains("ECMAScript modules (ESM)"));
+    assert!(visible.contains("immediately invoked function expression (IIFE)"));
+    assert!(visible.contains("universal module definition (UMD)"));
+    assert!(
+        !visible
+            .lines()
+            .any(|line| line.trim() == "Native TypeScript")
+    );
+    assert!(visible.contains("native TypeScript type stripping"));
+    assert!(visible.contains("v22.6.0"));
+}
+
+#[test]
 fn fast_mode_counts_text_matches() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("runtime.ts"), "Temporal.Now.instant();\n").unwrap();
@@ -366,7 +515,7 @@ fn fast_mode_prefers_longest_overlapping_feature_token() {
     let dir = tempdir().unwrap();
     fs::write(
         dir.path().join("iter.ts"),
-        "GRID_RANGE.flatMap((row) => row);\n",
+        "Iterator.from(GRID_RANGE).flatMap((row) => row);\n",
     )
     .unwrap();
 
@@ -503,7 +652,7 @@ fn warns_and_fixes_engines_node() {
     let warning = String::from_utf8_lossy(&warning);
     let warning = visible_text(&warning);
     assert!(!warning.contains("Warnings"));
-    assert!(warning.contains("⚠ Detected Node.js"));
+    assert!(warning.contains("▲ Detected Node.js"));
     assert!(warning.contains("--fix"));
 
     command()
@@ -540,5 +689,5 @@ fn renders_stricter_engines_node_as_info() {
     let visible = visible_text(&output);
     assert!(!visible.contains("Warnings"));
     assert!(visible.contains("ⓘ Detected Node.js"));
-    assert!(!visible.contains("⚠ Detected Node.js"));
+    assert!(!visible.contains("▲ Detected Node.js"));
 }

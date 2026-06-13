@@ -1,6 +1,6 @@
 {
   "name": "runtime-checker",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Detect minimum runtime versions required by JavaScript and TypeScript codebases.",
   "license": "BSD-3-Clause",
   "type": "module",

@@ -105,9 +105,34 @@ impl Reporter {
                 )
             );
 
-            for entry in aggregate_entries(entries) {
+            let mut api_entries = Vec::new();
+            let mut syntax_entries = Vec::new();
+            let mut module_entries = Vec::new();
+            let mut typescript_entries = Vec::new();
+            for entry in entries.iter().copied() {
+                match feature_category(&entry.feature) {
+                    FeatureCategory::Api => api_entries.push(entry),
+                    FeatureCategory::Syntax => syntax_entries.push(entry),
+                    FeatureCategory::ModuleFormat => module_entries.push(entry),
+                    FeatureCategory::NativeTypeScript => typescript_entries.push(entry),
+                }
+            }
+
+            for entry in aggregate_entries(&api_entries) {
                 print_aggregate(root, &entry);
             }
+
+            if !syntax_entries.is_empty() {
+                if !api_entries.is_empty() {
+                    println!();
+                }
+                for entry in aggregate_entries(&syntax_entries) {
+                    print_aggregate(root, &entry);
+                }
+            }
+
+            print_spaced_entries(root, &module_entries);
+            print_spaced_entries(root, &typescript_entries);
 
             printed = true;
         }
@@ -264,11 +289,179 @@ fn print_detection(root: &Path, entry: &DetectedFeature) {
     );
 }
 
+fn print_spaced_entries(root: &Path, entries: &[&DetectedFeature]) {
+    if entries.is_empty() {
+        return;
+    }
+
+    println!();
+    for entry in aggregate_entries(entries) {
+        print_aggregate(root, &entry);
+    }
+}
+
 fn feature_label(feature: &str, count: usize) -> String {
+    let feature = display_feature_label(feature).unwrap_or(feature);
     if count > 1 {
         format!("{feature} (x{count})")
     } else {
         feature.to_string()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FeatureCategory {
+    Api,
+    Syntax,
+    ModuleFormat,
+    NativeTypeScript,
+}
+
+fn feature_category(feature: &str) -> FeatureCategory {
+    if feature.starts_with("module.") {
+        FeatureCategory::ModuleFormat
+    } else if feature.starts_with("typescript.") {
+        FeatureCategory::NativeTypeScript
+    } else if feature.starts_with("syntax.") {
+        FeatureCategory::Syntax
+    } else {
+        FeatureCategory::Api
+    }
+}
+
+fn display_feature_label(feature: &str) -> Option<&'static str> {
+    support_feature_label(feature).or_else(|| syntax_feature_label(feature))
+}
+
+fn support_feature_label(feature: &str) -> Option<&'static str> {
+    match feature {
+        "module.commonjs" => Some("CommonJS (CJS)"),
+        "module.esm" => Some("ECMAScript modules (ESM)"),
+        "module.iife" => Some("immediately invoked function expression (IIFE)"),
+        "module.umd" => Some("universal module definition (UMD)"),
+        "typescript.native" => Some("native TypeScript type stripping"),
+        _ => None,
+    }
+}
+
+fn syntax_feature_label(feature: &str) -> Option<&'static str> {
+    match feature {
+        "syntax.functions.arrow_functions" => Some("anonymous function (() => {})"),
+        "syntax.functions.default_parameters" => Some("default parameters"),
+        "syntax.functions.rest_parameters" => Some("rest parameters (...args)"),
+        "syntax.grammar.array_literals" => Some("array literal ([...])"),
+        "syntax.grammar.boolean_literals" => Some("boolean literal (true)"),
+        "syntax.grammar.decimal_numeric_literals" => Some("number literal (1)"),
+        "syntax.grammar.null_literal" => Some("null literal (null)"),
+        "syntax.grammar.regular_expression_literals" => Some("regex literal (/.../)"),
+        "syntax.grammar.string_literals" => Some("string literal (\"...\")"),
+        "syntax.grammar.template_literals" => Some("template literal (`...`)"),
+        "syntax.operators.addition" => Some("addition (+)"),
+        "syntax.operators.addition_assignment" => Some("addition assignment (+=)"),
+        "syntax.operators.assignment" => Some("assignment (=)"),
+        "syntax.operators.async_function" => Some("async function (async function)"),
+        "syntax.operators.async_generator_function" => {
+            Some("async generator function (async function*)")
+        }
+        "syntax.operators.await" => Some("await expression (await)"),
+        "syntax.operators.bitwise_and" => Some("bitwise and (&)"),
+        "syntax.operators.bitwise_and_assignment" => Some("bitwise and assignment (&=)"),
+        "syntax.operators.bitwise_not" => Some("bitwise not (~)"),
+        "syntax.operators.bitwise_or" => Some("bitwise or (|)"),
+        "syntax.operators.bitwise_or_assignment" => Some("bitwise or assignment (|=)"),
+        "syntax.operators.bitwise_xor" => Some("bitwise xor (^)"),
+        "syntax.operators.bitwise_xor_assignment" => Some("bitwise xor assignment (^=)"),
+        "syntax.operators.class" => Some("class expression (class {})"),
+        "syntax.operators.comma" => Some("sequence expression (,)"),
+        "syntax.operators.conditional" => Some("conditional expression (a ? b : c)"),
+        "syntax.operators.decrement" => Some("decrement (--)"),
+        "syntax.operators.delete" => Some("delete operator (delete)"),
+        "syntax.operators.division" => Some("division (/)"),
+        "syntax.operators.division_assignment" => Some("division assignment (/=)"),
+        "syntax.operators.equality" => Some("loose equality (==)"),
+        "syntax.operators.exponentiation" => Some("exponentiation (**)"),
+        "syntax.operators.exponentiation_assignment" => Some("exponentiation assignment (**=)"),
+        "syntax.operators.function" => Some("function expression (function)"),
+        "syntax.operators.generator_function" => Some("generator function (function*)"),
+        "syntax.operators.greater_than" => Some("greater than (>)"),
+        "syntax.operators.greater_than_or_equal" => Some("greater than or equal (>=)"),
+        "syntax.operators.import" => Some("dynamic import (import())"),
+        "syntax.operators.in" => Some("in operator (in)"),
+        "syntax.operators.increment" => Some("increment (++)"),
+        "syntax.operators.inequality" => Some("loose inequality (!=)"),
+        "syntax.operators.instanceof" => Some("instanceof operator (instanceof)"),
+        "syntax.operators.left_shift" => Some("left shift (<<)"),
+        "syntax.operators.left_shift_assignment" => Some("left shift assignment (<<=)"),
+        "syntax.operators.less_than" => Some("less than (<)"),
+        "syntax.operators.less_than_or_equal" => Some("less than or equal (<=)"),
+        "syntax.operators.logical_and" => Some("logical and (&&)"),
+        "syntax.operators.logical_and_assignment" => Some("logical and assignment (&&=)"),
+        "syntax.operators.logical_not" => Some("logical not (!)"),
+        "syntax.operators.logical_or" => Some("logical or (||)"),
+        "syntax.operators.logical_or_assignment" => Some("logical or assignment (||=)"),
+        "syntax.operators.multiplication" => Some("multiplication (*)"),
+        "syntax.operators.multiplication_assignment" => Some("multiplication assignment (*=)"),
+        "syntax.operators.new" => Some("new expression (new)"),
+        "syntax.operators.nullish_coalescing" => Some("nullish coalescing (??)"),
+        "syntax.operators.nullish_coalescing_assignment" => Some("nullish assignment (??=)"),
+        "syntax.operators.object_initializer" => Some("object literal ({})"),
+        "syntax.operators.optional_chaining" => Some("optional chaining (?.)"),
+        "syntax.operators.remainder" => Some("remainder (%)"),
+        "syntax.operators.remainder_assignment" => Some("remainder assignment (%=)"),
+        "syntax.operators.right_shift" => Some("right shift (>>)"),
+        "syntax.operators.right_shift_assignment" => Some("right shift assignment (>>=)"),
+        "syntax.operators.spread" => Some("spread syntax (...)"),
+        "syntax.operators.strict_equality" => Some("strict equality (===)"),
+        "syntax.operators.strict_inequality" => Some("strict inequality (!==)"),
+        "syntax.operators.subtraction" => Some("subtraction (-)"),
+        "syntax.operators.subtraction_assignment" => Some("subtraction assignment (-=)"),
+        "syntax.operators.super" => Some("super expression (super)"),
+        "syntax.operators.this" => Some("this expression (this)"),
+        "syntax.operators.typeof" => Some("typeof operator (typeof)"),
+        "syntax.operators.unary_negation" => Some("unary negation (-x)"),
+        "syntax.operators.unary_plus" => Some("unary plus (+x)"),
+        "syntax.operators.unsigned_right_shift" => Some("unsigned right shift (>>>)"),
+        "syntax.operators.unsigned_right_shift_assignment" => {
+            Some("unsigned right shift assignment (>>>=)")
+        }
+        "syntax.operators.void" => Some("void operator (void)"),
+        "syntax.operators.yield" => Some("yield expression (yield)"),
+        "syntax.statements.await_using" => Some("await using declaration (await using)"),
+        "syntax.statements.async_function" => Some("async function declaration (async function)"),
+        "syntax.statements.async_generator_function" => {
+            Some("async generator function declaration (async function*)")
+        }
+        "syntax.statements.block" => Some("block statement ({})"),
+        "syntax.statements.break" => Some("break statement (break)"),
+        "syntax.statements.class" => Some("class declaration (class)"),
+        "syntax.statements.const" => Some("constant declaration (const)"),
+        "syntax.statements.continue" => Some("continue statement (continue)"),
+        "syntax.statements.debugger" => Some("debugger statement (debugger)"),
+        "syntax.statements.do_while" => Some("do while loop (do...while)"),
+        "syntax.statements.empty" => Some("empty statement (;)"),
+        "syntax.statements.export" => Some("export declaration (export)"),
+        "syntax.statements.export.default" => Some("default export (export default)"),
+        "syntax.statements.export.namespace" => Some("namespace export (export *)"),
+        "syntax.statements.for" => Some("for loop (for)"),
+        "syntax.statements.for_in" => Some("for in loop (for...in)"),
+        "syntax.statements.for_of" => Some("for of loop (for...of)"),
+        "syntax.statements.function" => Some("function declaration (function)"),
+        "syntax.statements.generator_function" => {
+            Some("generator function declaration (function*)")
+        }
+        "syntax.statements.if_else" => Some("if statement (if)"),
+        "syntax.statements.import" => Some("import declaration (import)"),
+        "syntax.statements.label" => Some("label statement (label:)"),
+        "syntax.statements.let" => Some("let declaration (let)"),
+        "syntax.statements.return" => Some("return statement (return)"),
+        "syntax.statements.switch" => Some("switch statement (switch)"),
+        "syntax.statements.throw" => Some("throw statement (throw)"),
+        "syntax.statements.try_catch" => Some("try catch statement (try/catch)"),
+        "syntax.statements.using" => Some("using declaration (using)"),
+        "syntax.statements.var" => Some("variable declaration (var)"),
+        "syntax.statements.while" => Some("while loop (while)"),
+        "syntax.statements.with" => Some("with statement (with)"),
+        _ => None,
     }
 }
 
@@ -347,6 +540,13 @@ fn print_result_panel(
             .filter(|report| runtime_group(&report.runtime) == RuntimeGroup::Runtime),
         &footnotes,
     );
+    if printed_runtimes
+        && reports
+            .iter()
+            .any(|report| runtime_group(&report.runtime) == RuntimeGroup::Browser)
+    {
+        println!();
+    }
     let printed_browsers = print_summary_group(
         "Browsers",
         reports
@@ -355,11 +555,12 @@ fn print_result_panel(
         &footnotes,
     );
 
-    if printed_runtimes || printed_browsers {
-        println!();
-    }
+    let printed_summary = printed_runtimes || printed_browsers;
 
     if !footnotes.is_empty() {
+        if printed_summary {
+            println!();
+        }
         for footnote in &footnotes {
             println!(
                 "{}",
@@ -373,7 +574,9 @@ fn print_result_panel(
 
     let notices = panel_notices(root, reports);
     if !notices.is_empty() {
-        println!();
+        if printed_summary || !footnotes.is_empty() {
+            println!();
+        }
         print_notice_group(&notices);
     }
 
@@ -410,7 +613,7 @@ fn print_notice_group(notices: &[PanelNotice]) {
         };
         let icon = match notice.kind {
             NoticeKind::Info => "ⓘ",
-            NoticeKind::Warning => "⚠",
+            NoticeKind::Warning => "▲",
             NoticeKind::Update => "✓",
         };
         println!(
@@ -420,7 +623,6 @@ fn print_notice_group(notices: &[PanelNotice]) {
             reset()
         );
     }
-    println!();
 }
 
 fn print_summary_group<'a>(
@@ -452,7 +654,6 @@ fn print_summary_group<'a>(
             reset()
         );
     }
-    println!();
     true
 }
 
