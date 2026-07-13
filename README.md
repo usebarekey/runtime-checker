@@ -1,49 +1,18 @@
-# runtime-checker
+<h1 align="center">runtime-checker</h1>
 
-Find the minimum runtime version needed for a JavaScript or TypeScript codebase.
+<p align="center">
+  <a href="https://www.npmjs.com/package/runtime-checker">npm</a>
+  &bull;
+  <a href="https://docs.barekey.dev/runtime-checker">docs</a>
+</p>
 
-It parses files with Oxc and checks runtime APIs, JavaScript syntax, module format, and native TypeScript usage. It can report requirements for Node.js, Deno, Bun, Safari, Chromium, and Firefox.
+---
 
-## install
+Turn the APIs and syntax in a JavaScript or TypeScript codebase into a concrete runtime floor.
 
-```sh
-npm install runtime-checker
-pnpm add runtime-checker
-bun add runtime-checker
-deno add npm:runtime-checker
-```
+```console
+$ npx runtime-checker .
 
-## usage
-
-```sh
-runtime-checker <dir>
-```
-
-For app compatibility, scan the code you ship. For bundled apps, that usually means the build output, not just `src`.
-
-## options
-
-```sh
-runtime-checker <dir> --summary
-runtime-checker <dir> --runtime node
-runtime-checker <dir> --inspect Symbol.asyncDispose
-runtime-checker <dir> --fix
-```
-
-- `--summary` prints only the result panel.
-- `--runtime <all|node|deno|bun|safari|chrome|firefox>` limits output to one target.
-- `--inspect <feature>` prints every detection for a feature.
-- `--fix` updates `package.json` `engines.node` when the detected Node.js version is not satisfied.
-
-## detects
-
-- Runtime APIs such as `fetch`, `Temporal`, `fs.cp`, `sqlite.DatabaseSync`, and `Symbol.asyncDispose`.
-- JavaScript syntax such as optional chaining, nullish coalescing, ESM, `await using`, and native TypeScript support.
-- Node.js `engines.node` mismatches.
-
-## output
-
-```txt
 Finished in 665ms using oxc (ast parsing) after scanning 307k lines of code.
 
 Runtimes
@@ -57,4 +26,8 @@ Browsers
 - Firefox 141.0.0
 ```
 
-Use `--inspect <feature>` when you want to see every file and location that caused a requirement.
+runtime-checker parses JavaScript and TypeScript with Oxc, then combines runtime APIs, language syntax, module format, and native TypeScript usage into minimum versions for Node.js, Deno, Bun, Safari, Chromium, and Firefox.
+
+Narrow a scan with `--runtime node`, print only the result with `--summary`, or trace every location behind a requirement with `--inspect Symbol.asyncDispose`. `--fast` uses less precise text matching. Directories named `.git`, `node_modules`, `dist`, `build`, `coverage`, and `target` are skipped.
+
+Visit the **[documentation](https://docs.barekey.dev/runtime-checker)** for installation, command options, detection details, and limitations.
